@@ -2,13 +2,14 @@
 
 import hashlib
 import json
+import random
 import threading
 import time
 from collections.abc import Callable
 from functools import wraps
 from typing import Any, ParamSpec, TypeVar, cast
 
-from t87s.adapters.base import StorageAdapter
+from t87s.adapters.base import StorageAdapter, VerifiableAdapter
 from t87s.duration import parse_duration
 from t87s.types import CacheEntry, Duration, MutationResult, QueryConfig, Tag
 
@@ -26,6 +27,7 @@ class T87s:
         prefix: str = "t87s",
         default_ttl: Duration = "30s",
         default_grace: Duration | None = None,
+        verify_percent: float = 0.1,
     ) -> None:
         self._adapter = adapter
         self._prefix = prefix
@@ -33,6 +35,9 @@ class T87s:
         self._default_grace = (
             parse_duration(default_grace) if default_grace is not None else None
         )
+        if not 0 <= verify_percent <= 1:
+            raise ValueError("verify_percent must be between 0 and 1")
+        self._verify_percent = verify_percent
         self._in_flight: dict[str, threading.Event] = {}
         self._in_flight_results: dict[str, Any] = {}
         self._in_flight_errors: dict[str, BaseException] = {}
@@ -69,6 +74,43 @@ class T87s:
         if entry.grace_until is None:
             return False
         return time.time() * 1000 <= entry.grace_until
+
+    def _should_verify(self) -> bool:
+        """Determine if we should verify this cache hit."""
+        if not isinstance(self._adapter, VerifiableAdapter):
+            return False
+        if self._verify_percent <= 0:
+            return False
+        if self._verify_percent >= 1:
+            return True
+        return random.random() < self._verify_percent
+
+    def _run_verification(
+        self,
+        key: str,
+        config: QueryConfig[Any],
+        cached_value: Any,
+    ) -> None:
+        """Run verification in a background thread."""
+
+        def verify() -> None:
+            try:
+                fresh_value = config.fn()
+                cached_hash = hashlib.sha256(
+                    json.dumps(cached_value, sort_keys=True, default=str).encode()
+                ).hexdigest()[:16]
+                fresh_hash = hashlib.sha256(
+                    json.dumps(fresh_value, sort_keys=True, default=str).encode()
+                ).hexdigest()[:16]
+                is_stale = cached_hash != fresh_hash
+                cast(VerifiableAdapter, self._adapter).report_verification(
+                    key, is_stale, cached_hash, fresh_hash
+                )
+            except Exception:
+                pass  # Silently fail verification
+
+        thread = threading.Thread(target=verify, daemon=True)
+        thread.start()
 
     def _coalesce(self, key: str, fetch: Callable[[], R]) -> R:
         """Coalesce concurrent requests for same key."""
@@ -154,6 +196,9 @@ class T87s:
 
                     # Fresh and not stale - return immediately
                     if not stale and not expired:
+                        # Potentially verify in background
+                        if self._should_verify():
+                            self._run_verification(key, config, entry.value)
                         return cast(R, entry.value)
 
                     # Stale/expired but in grace - return stale, refresh bg

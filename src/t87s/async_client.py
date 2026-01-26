@@ -3,12 +3,13 @@
 import asyncio
 import hashlib
 import json
+import random
 import time
 from collections.abc import Awaitable, Callable
 from functools import wraps
 from typing import Any, ParamSpec, TypeVar, cast
 
-from t87s.adapters.base import AsyncStorageAdapter
+from t87s.adapters.base import AsyncStorageAdapter, AsyncVerifiableAdapter
 from t87s.duration import parse_duration
 from t87s.types import AsyncQueryConfig, CacheEntry, Duration, MutationResult, Tag
 
@@ -26,6 +27,7 @@ class AsyncT87s:
         prefix: str = "t87s",
         default_ttl: Duration = "30s",
         default_grace: Duration | None = None,
+        verify_percent: float = 0.1,
     ) -> None:
         self._adapter = adapter
         self._prefix = prefix
@@ -33,6 +35,9 @@ class AsyncT87s:
         self._default_grace = (
             parse_duration(default_grace) if default_grace is not None else None
         )
+        if not 0 <= verify_percent <= 1:
+            raise ValueError("verify_percent must be between 0 and 1")
+        self._verify_percent = verify_percent
         self._in_flight: dict[str, asyncio.Event] = {}
         self._in_flight_results: dict[str, Any] = {}
         self._in_flight_errors: dict[str, BaseException] = {}
@@ -70,6 +75,44 @@ class AsyncT87s:
         if entry.grace_until is None:
             return False
         return time.time() * 1000 <= entry.grace_until
+
+    def _should_verify(self) -> bool:
+        """Determine if we should verify this cache hit."""
+        if not isinstance(self._adapter, AsyncVerifiableAdapter):
+            return False
+        if self._verify_percent <= 0:
+            return False
+        if self._verify_percent >= 1:
+            return True
+        return random.random() < self._verify_percent
+
+    def _run_verification(
+        self,
+        key: str,
+        config: AsyncQueryConfig[Any],
+        cached_value: Any,
+    ) -> None:
+        """Run verification in a background task."""
+
+        async def verify() -> None:
+            try:
+                fresh_value = await config.fn()
+                cached_hash = hashlib.sha256(
+                    json.dumps(cached_value, sort_keys=True, default=str).encode()
+                ).hexdigest()[:16]
+                fresh_hash = hashlib.sha256(
+                    json.dumps(fresh_value, sort_keys=True, default=str).encode()
+                ).hexdigest()[:16]
+                is_stale = cached_hash != fresh_hash
+                await cast(AsyncVerifiableAdapter, self._adapter).report_verification(
+                    key, is_stale, cached_hash, fresh_hash
+                )
+            except Exception:
+                pass  # Silently fail verification
+
+        task = asyncio.create_task(verify())
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
 
     async def _coalesce(self, key: str, fetch: Callable[[], Awaitable[R]]) -> R:
         """Coalesce concurrent requests for same key."""
@@ -156,6 +199,9 @@ class AsyncT87s:
 
                     # Fresh and not stale - return immediately
                     if not stale and not expired:
+                        # Potentially verify in background
+                        if self._should_verify():
+                            self._run_verification(key, config, entry.value)
                         return cast(R, entry.value)
 
                     # Stale/expired but in grace - return stale, refresh bg

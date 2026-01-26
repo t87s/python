@@ -75,9 +75,20 @@ class AsyncStorageAdapter(Protocol):
 
 @runtime_checkable
 class VerifiableAdapter(Protocol):
-    """Optional mixin for adapters that support staleness verification."""
+    """Optional mixin for sync adapters that support staleness verification."""
 
     def report_verification(
+        self, key: str, is_stale: bool, cached_hash: str, fresh_hash: str
+    ) -> None:
+        """Report verification result to the backend."""
+        ...
+
+
+@runtime_checkable
+class AsyncVerifiableAdapter(Protocol):
+    """Optional mixin for async adapters that support staleness verification."""
+
+    async def report_verification(
         self, key: str, is_stale: bool, cached_hash: str, fresh_hash: str
     ) -> None:
         """Report verification result to the backend."""
