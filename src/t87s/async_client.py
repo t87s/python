@@ -71,9 +71,7 @@ class AsyncT87s:
             return False
         return time.time() * 1000 <= entry.grace_until
 
-    async def _coalesce(
-        self, key: str, fetch: Callable[[], Awaitable[R]]
-    ) -> R:
+    async def _coalesce(self, key: str, fetch: Callable[[], Awaitable[R]]) -> R:
         """Coalesce concurrent requests for same key."""
         async with self._lock:
             if key in self._in_flight:

@@ -215,9 +215,7 @@ class TestAsyncRedisAdapter:
         assert await async_redis_adapter.get("async_key1") is None
         assert await async_redis_adapter.get("async_key2") is None
 
-    async def test_ttl_expiration(
-        self, async_redis_adapter: AsyncRedisAdapter
-    ) -> None:
+    async def test_ttl_expiration(self, async_redis_adapter: AsyncRedisAdapter) -> None:
         """Test that entries expire based on TTL."""
         import time
 

@@ -9,7 +9,7 @@ _UNESCAPE_MAP = {"\\\\": "\\", "\\:": ":"}
 
 
 def define_tags(
-    definitions: dict[str, Callable[..., tuple[str, ...]]]
+    definitions: dict[str, Callable[..., tuple[str, ...]]],
 ) -> dict[str, Callable[..., Tag]]:
     """
     Define all tags in a centralized location.

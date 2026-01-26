@@ -62,9 +62,7 @@ class TestCacheMissAndHit:
         get_user("123")
         assert fetch_count == 1
 
-    def test_different_keys_are_separate(
-        self, t87s_client: T87s, tags: dict
-    ) -> None:
+    def test_different_keys_are_separate(self, t87s_client: T87s, tags: dict) -> None:
         """Test that different keys have separate cache entries."""
         fetch_count = 0
 
@@ -256,9 +254,7 @@ class TestGracePeriod:
                 fetch_count += 1
                 return {"id": id, "version": fetch_count}
 
-            return QueryConfig(
-                tags=[tags["user"](id)], ttl="1ms", grace="1s", fn=fetch
-            )
+            return QueryConfig(tags=[tags["user"](id)], ttl="1ms", grace="1s", fn=fetch)
 
         result1 = get_user("123")
         assert result1["version"] == 1

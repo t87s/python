@@ -20,9 +20,7 @@ class TestDefineTags:
 
     def test_nested_tag(self) -> None:
         """Test defining a nested tag."""
-        tags = define_tags(
-            {"user_posts": lambda user_id: ("user", user_id, "posts")}
-        )
+        tags = define_tags({"user_posts": lambda user_id: ("user", user_id, "posts")})
         result = tags["user_posts"]("456")
         assert result == ("user", "456", "posts")
 
