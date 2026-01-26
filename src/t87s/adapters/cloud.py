@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from typing import Any, cast
 
 from t87s.types import CacheEntry, Tag
 
@@ -27,7 +28,7 @@ class CloudAdapter:
             timeout=30.0,
         )
 
-    def _request(self, endpoint: str, body: dict) -> dict:
+    def _request(self, endpoint: str, body: dict[str, Any]) -> dict[str, Any]:
         """Make a POST request to the cloud API."""
         response = self._client.post(endpoint, json=body)
         if not response.is_success:
@@ -36,7 +37,7 @@ class CloudAdapter:
             except Exception:
                 error = f"HTTP {response.status_code}"
             raise RuntimeError(error)
-        return response.json()
+        return cast(dict[str, Any], response.json())
 
     def get(self, key: str) -> CacheEntry[object] | None:
         """Get a cache entry by key."""
@@ -134,7 +135,7 @@ class AsyncCloudAdapter:
             timeout=30.0,
         )
 
-    async def _request(self, endpoint: str, body: dict) -> dict:
+    async def _request(self, endpoint: str, body: dict[str, Any]) -> dict[str, Any]:
         """Make a POST request to the cloud API."""
         response = await self._client.post(endpoint, json=body)
         if not response.is_success:
@@ -143,7 +144,7 @@ class AsyncCloudAdapter:
             except Exception:
                 error = f"HTTP {response.status_code}"
             raise RuntimeError(error)
-        return response.json()
+        return cast(dict[str, Any], response.json())
 
     async def get(self, key: str) -> CacheEntry[object] | None:
         """Get a cache entry by key."""
