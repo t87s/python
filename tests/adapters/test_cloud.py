@@ -1,5 +1,7 @@
 """Tests for Cloud adapters using mocked HTTP responses."""
 
+import json
+
 import pytest
 
 # Skip all tests if httpx is not installed
@@ -15,17 +17,13 @@ from t87s.adapters.cloud import AsyncCloudAdapter, CloudAdapter
 @pytest.fixture
 def cloud_adapter() -> CloudAdapter:
     """Create a CloudAdapter with test configuration."""
-    return CloudAdapter(
-        api_key="test-api-key", base_url="https://api.test.dev", prefix="test"
-    )
+    return CloudAdapter(api_key="test-api-key", base_url="https://api.test.dev")
 
 
 @pytest.fixture
 def async_cloud_adapter() -> AsyncCloudAdapter:
     """Create an AsyncCloudAdapter with test configuration."""
-    return AsyncCloudAdapter(
-        api_key="test-api-key", base_url="https://api.test.dev", prefix="test"
-    )
+    return AsyncCloudAdapter(api_key="test-api-key", base_url="https://api.test.dev")
 
 
 class TestCloudAdapter:
@@ -34,15 +32,17 @@ class TestCloudAdapter:
     @respx.mock
     def test_get_returns_entry(self, cloud_adapter: CloudAdapter) -> None:
         """Test getting a cached entry."""
-        respx.get("https://api.test.dev/cache/test/key1").mock(
+        route = respx.post("https://api.test.dev/v1/cache/get").mock(
             return_value=httpx.Response(
                 200,
                 json={
-                    "value": {"id": "123"},
-                    "tags": [["user", "123"]],
-                    "created_at": 1000,
-                    "expires_at": 2000,
-                    "grace_until": None,
+                    "entry": {
+                        "value": {"id": "123"},
+                        "tags": [["user", "123"]],
+                        "createdAt": 1000,
+                        "expiresAt": 2000,
+                        "graceUntil": None,
+                    }
                 },
             )
         )
@@ -53,11 +53,17 @@ class TestCloudAdapter:
         assert result.tags == [("user", "123")]
         assert result.created_at == 1000
 
+        # Verify request body
+        request_body = json.loads(route.calls[0].request.content)
+        assert request_body == {"key": "key1"}
+
     @respx.mock
-    def test_get_returns_none_on_404(self, cloud_adapter: CloudAdapter) -> None:
-        """Test that 404 returns None."""
-        respx.get("https://api.test.dev/cache/test/nonexistent").mock(
-            return_value=httpx.Response(404)
+    def test_get_returns_none_on_missing_entry(
+        self, cloud_adapter: CloudAdapter
+    ) -> None:
+        """Test that missing entry returns None."""
+        respx.post("https://api.test.dev/v1/cache/get").mock(
+            return_value=httpx.Response(200, json={"entry": None})
         )
 
         result = cloud_adapter.get("nonexistent")
@@ -66,8 +72,8 @@ class TestCloudAdapter:
     @respx.mock
     def test_set_sends_entry(self, cloud_adapter: CloudAdapter) -> None:
         """Test setting a cached entry."""
-        route = respx.put("https://api.test.dev/cache/test/key1").mock(
-            return_value=httpx.Response(200)
+        route = respx.post("https://api.test.dev/v1/cache/set").mock(
+            return_value=httpx.Response(200, json={"ok": True})
         )
 
         entry: CacheEntry[object] = CacheEntry(
@@ -82,64 +88,51 @@ class TestCloudAdapter:
         assert route.called
         request = route.calls[0].request
         assert request.headers["Authorization"] == "Bearer test-api-key"
+        request_body = json.loads(request.content)
+        assert request_body["key"] == "key1"
+        assert request_body["entry"]["value"] == {"id": "123"}
+        assert request_body["entry"]["createdAt"] == 1000
+        assert request_body["entry"]["expiresAt"] == 2000
+        assert request_body["entry"]["graceUntil"] == 3000
 
     @respx.mock
     def test_delete_sends_request(self, cloud_adapter: CloudAdapter) -> None:
         """Test deleting a cached entry."""
-        route = respx.delete("https://api.test.dev/cache/test/key1").mock(
-            return_value=httpx.Response(200)
+        route = respx.post("https://api.test.dev/v1/cache/delete").mock(
+            return_value=httpx.Response(200, json={"ok": True})
         )
 
         cloud_adapter.delete("key1")
         assert route.called
+        request_body = json.loads(route.calls[0].request.content)
+        assert request_body == {"key": "key1"}
 
-    @respx.mock
-    def test_delete_ignores_404(self, cloud_adapter: CloudAdapter) -> None:
-        """Test that delete ignores 404."""
-        respx.delete("https://api.test.dev/cache/test/nonexistent").mock(
-            return_value=httpx.Response(404)
-        )
-
-        # Should not raise
-        cloud_adapter.delete("nonexistent")
-
-    @respx.mock
-    def test_get_tag_invalidation_time(self, cloud_adapter: CloudAdapter) -> None:
-        """Test getting tag invalidation time."""
-        respx.get("https://api.test.dev/tags/test/user:123").mock(
-            return_value=httpx.Response(200, json={"timestamp": 1000})
-        )
-
-        result = cloud_adapter.get_tag_invalidation_time(Tag(("user", "123")))
-        assert result == 1000
-
-    @respx.mock
-    def test_get_tag_invalidation_time_returns_none_on_404(
+    def test_get_tag_invalidation_time_returns_none(
         self, cloud_adapter: CloudAdapter
     ) -> None:
-        """Test that 404 returns None for tag invalidation time."""
-        respx.get("https://api.test.dev/tags/test/user:456").mock(
-            return_value=httpx.Response(404)
-        )
-
-        result = cloud_adapter.get_tag_invalidation_time(Tag(("user", "456")))
+        """Test that get_tag_invalidation_time returns None (server-side check)."""
+        # No HTTP mock needed - this should return None immediately
+        result = cloud_adapter.get_tag_invalidation_time(Tag(("user", "123")))
         assert result is None
 
     @respx.mock
     def test_set_tag_invalidation_time(self, cloud_adapter: CloudAdapter) -> None:
-        """Test setting tag invalidation time."""
-        route = respx.put("https://api.test.dev/tags/test/user:123").mock(
-            return_value=httpx.Response(200)
+        """Test setting tag invalidation time via /v1/invalidate."""
+        route = respx.post("https://api.test.dev/v1/invalidate").mock(
+            return_value=httpx.Response(200, json={"ok": True, "invalidatedAt": 2000})
         )
 
         cloud_adapter.set_tag_invalidation_time(Tag(("user", "123")), 2000)
         assert route.called
+        request_body = json.loads(route.calls[0].request.content)
+        assert request_body["tags"] == [["user", "123"]]
+        assert request_body["exact"] is True
 
     @respx.mock
     def test_clear_sends_request(self, cloud_adapter: CloudAdapter) -> None:
         """Test clearing all cached entries."""
-        route = respx.delete("https://api.test.dev/cache/test").mock(
-            return_value=httpx.Response(200)
+        route = respx.post("https://api.test.dev/v1/clear").mock(
+            return_value=httpx.Response(200, json={"ok": True})
         )
 
         cloud_adapter.clear()
@@ -148,8 +141,8 @@ class TestCloudAdapter:
     @respx.mock
     def test_report_verification(self, cloud_adapter: CloudAdapter) -> None:
         """Test reporting verification result."""
-        route = respx.post("https://api.test.dev/verify").mock(
-            return_value=httpx.Response(200)
+        route = respx.post("https://api.test.dev/v1/verify").mock(
+            return_value=httpx.Response(200, json={"ok": True})
         )
 
         cloud_adapter.report_verification(
@@ -160,8 +153,12 @@ class TestCloudAdapter:
         )
 
         assert route.called
-        request = route.calls[0].request
-        assert b"is_stale" in request.content
+        request_body = json.loads(route.calls[0].request.content)
+        assert request_body["key"] == "key1"
+        assert request_body["isStale"] is True
+        assert request_body["cachedHash"] == "abc123"
+        assert request_body["freshHash"] == "def456"
+        assert "timestamp" in request_body
 
 
 class TestAsyncCloudAdapter:
@@ -172,15 +169,17 @@ class TestAsyncCloudAdapter:
         self, async_cloud_adapter: AsyncCloudAdapter
     ) -> None:
         """Test getting a cached entry."""
-        respx.get("https://api.test.dev/cache/test/key1").mock(
+        respx.post("https://api.test.dev/v1/cache/get").mock(
             return_value=httpx.Response(
                 200,
                 json={
-                    "value": {"id": "456"},
-                    "tags": [["post", "456"]],
-                    "created_at": 2000,
-                    "expires_at": 3000,
-                    "grace_until": 4000,
+                    "entry": {
+                        "value": {"id": "456"},
+                        "tags": [["post", "456"]],
+                        "createdAt": 2000,
+                        "expiresAt": 3000,
+                        "graceUntil": 4000,
+                    }
                 },
             )
         )
@@ -191,12 +190,12 @@ class TestAsyncCloudAdapter:
         assert result.grace_until == 4000
 
     @respx.mock
-    async def test_get_returns_none_on_404(
+    async def test_get_returns_none_on_missing_entry(
         self, async_cloud_adapter: AsyncCloudAdapter
     ) -> None:
-        """Test that 404 returns None."""
-        respx.get("https://api.test.dev/cache/test/nonexistent").mock(
-            return_value=httpx.Response(404)
+        """Test that missing entry returns None."""
+        respx.post("https://api.test.dev/v1/cache/get").mock(
+            return_value=httpx.Response(200, json={"entry": None})
         )
 
         result = await async_cloud_adapter.get("nonexistent")
@@ -207,8 +206,8 @@ class TestAsyncCloudAdapter:
         self, async_cloud_adapter: AsyncCloudAdapter
     ) -> None:
         """Test setting a cached entry."""
-        route = respx.put("https://api.test.dev/cache/test/key1").mock(
-            return_value=httpx.Response(200)
+        route = respx.post("https://api.test.dev/v1/cache/set").mock(
+            return_value=httpx.Response(200, json={"ok": True})
         )
 
         entry: CacheEntry[object] = CacheEntry(
@@ -227,34 +226,29 @@ class TestAsyncCloudAdapter:
         self, async_cloud_adapter: AsyncCloudAdapter
     ) -> None:
         """Test deleting a cached entry."""
-        route = respx.delete("https://api.test.dev/cache/test/key1").mock(
-            return_value=httpx.Response(200)
+        route = respx.post("https://api.test.dev/v1/cache/delete").mock(
+            return_value=httpx.Response(200, json={"ok": True})
         )
 
         await async_cloud_adapter.delete("key1")
         assert route.called
 
-    @respx.mock
-    async def test_get_tag_invalidation_time(
+    async def test_get_tag_invalidation_time_returns_none(
         self, async_cloud_adapter: AsyncCloudAdapter
     ) -> None:
-        """Test getting tag invalidation time."""
-        respx.get("https://api.test.dev/tags/test/post:456").mock(
-            return_value=httpx.Response(200, json={"timestamp": 3000})
-        )
-
+        """Test that get_tag_invalidation_time returns None (server-side check)."""
         result = await async_cloud_adapter.get_tag_invalidation_time(
             Tag(("post", "456"))
         )
-        assert result == 3000
+        assert result is None
 
     @respx.mock
     async def test_set_tag_invalidation_time(
         self, async_cloud_adapter: AsyncCloudAdapter
     ) -> None:
-        """Test setting tag invalidation time."""
-        route = respx.put("https://api.test.dev/tags/test/post:456").mock(
-            return_value=httpx.Response(200)
+        """Test setting tag invalidation time via /v1/invalidate."""
+        route = respx.post("https://api.test.dev/v1/invalidate").mock(
+            return_value=httpx.Response(200, json={"ok": True, "invalidatedAt": 4000})
         )
 
         await async_cloud_adapter.set_tag_invalidation_time(Tag(("post", "456")), 4000)
@@ -265,8 +259,8 @@ class TestAsyncCloudAdapter:
         self, async_cloud_adapter: AsyncCloudAdapter
     ) -> None:
         """Test clearing all cached entries."""
-        route = respx.delete("https://api.test.dev/cache/test").mock(
-            return_value=httpx.Response(200)
+        route = respx.post("https://api.test.dev/v1/clear").mock(
+            return_value=httpx.Response(200, json={"ok": True})
         )
 
         await async_cloud_adapter.clear()
@@ -277,8 +271,8 @@ class TestAsyncCloudAdapter:
         self, async_cloud_adapter: AsyncCloudAdapter
     ) -> None:
         """Test reporting verification result."""
-        route = respx.post("https://api.test.dev/verify").mock(
-            return_value=httpx.Response(200)
+        route = respx.post("https://api.test.dev/v1/verify").mock(
+            return_value=httpx.Response(200, json={"ok": True})
         )
 
         await async_cloud_adapter.report_verification(

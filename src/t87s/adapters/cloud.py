@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from t87s.tags import serialize_tag
+import time
+
 from t87s.types import CacheEntry, Tag
 
 
@@ -14,75 +15,80 @@ class CloudAdapter:
         api_key: str,
         *,
         base_url: str = "https://api.t87s.dev",
-        prefix: str = "t87s",
     ) -> None:
         import httpx
 
         self._client = httpx.Client(
             base_url=base_url,
-            headers={"Authorization": f"Bearer {api_key}"},
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
             timeout=30.0,
         )
-        self._prefix = prefix
+
+    def _request(self, endpoint: str, body: dict) -> dict:
+        """Make a POST request to the cloud API."""
+        response = self._client.post(endpoint, json=body)
+        if not response.is_success:
+            try:
+                error = response.json().get("error", "Request failed")
+            except Exception:
+                error = f"HTTP {response.status_code}"
+            raise RuntimeError(error)
+        return response.json()
 
     def get(self, key: str) -> CacheEntry[object] | None:
         """Get a cache entry by key."""
-        response = self._client.get(f"/cache/{self._prefix}/{key}")
-        if response.status_code == 404:
+        data = self._request("/v1/cache/get", {"key": key})
+        entry = data.get("entry")
+        if entry is None:
             return None
-        response.raise_for_status()
-        data = response.json()
         return CacheEntry(
-            value=data["value"],
-            tags=[Tag(tuple(tag)) for tag in data["tags"]],
-            created_at=data["created_at"],
-            expires_at=data["expires_at"],
-            grace_until=data.get("grace_until"),
+            value=entry["value"],
+            tags=[Tag(tuple(tag)) for tag in entry["tags"]],
+            created_at=entry["createdAt"],
+            expires_at=entry["expiresAt"],
+            grace_until=entry.get("graceUntil"),
         )
 
     def set(self, key: str, entry: CacheEntry[object]) -> None:
         """Store a cache entry."""
-        response = self._client.put(
-            f"/cache/{self._prefix}/{key}",
-            json={
-                "value": entry.value,
-                "tags": [list(tag) for tag in entry.tags],
-                "created_at": entry.created_at,
-                "expires_at": entry.expires_at,
-                "grace_until": entry.grace_until,
+        self._request(
+            "/v1/cache/set",
+            {
+                "key": key,
+                "entry": {
+                    "value": entry.value,
+                    "tags": [list(tag) for tag in entry.tags],
+                    "createdAt": entry.created_at,
+                    "expiresAt": entry.expires_at,
+                    "graceUntil": entry.grace_until,
+                },
             },
         )
-        response.raise_for_status()
 
     def delete(self, key: str) -> None:
         """Delete a cache entry."""
-        response = self._client.delete(f"/cache/{self._prefix}/{key}")
-        # Ignore 404 - key might not exist
-        if response.status_code != 404:
-            response.raise_for_status()
+        self._request("/v1/cache/delete", {"key": key})
 
     def get_tag_invalidation_time(self, tag: Tag) -> int | None:
-        """Get the invalidation timestamp for a tag."""
-        serialized = serialize_tag(tag)
-        response = self._client.get(f"/tags/{self._prefix}/{serialized}")
-        if response.status_code == 404:
-            return None
-        response.raise_for_status()
-        return int(response.json()["timestamp"])
+        """Get the invalidation timestamp for a tag.
+
+        Note: This is rarely called directly. The cloud service checks
+        tag invalidation times server-side during get().
+        """
+        # For now, return None. Could add a /v1/tag/get endpoint later.
+        return None
 
     def set_tag_invalidation_time(self, tag: Tag, timestamp: int) -> None:
         """Set the invalidation timestamp for a tag."""
-        serialized = serialize_tag(tag)
-        response = self._client.put(
-            f"/tags/{self._prefix}/{serialized}",
-            json={"timestamp": timestamp},
-        )
-        response.raise_for_status()
+        # Invalidation is done via /v1/invalidate endpoint
+        self._request("/v1/invalidate", {"tags": [list(tag)], "exact": True})
 
     def clear(self) -> None:
         """Clear all cached entries."""
-        response = self._client.delete(f"/cache/{self._prefix}")
-        response.raise_for_status()
+        self._request("/v1/clear", {})
 
     def disconnect(self) -> None:
         """Close the HTTP client."""
@@ -96,17 +102,16 @@ class CloudAdapter:
         fresh_hash: str,
     ) -> None:
         """Report verification result to the cloud service."""
-        response = self._client.post(
-            "/verify",
-            json={
-                "prefix": self._prefix,
+        self._request(
+            "/v1/verify",
+            {
                 "key": key,
-                "is_stale": is_stale,
-                "cached_hash": cached_hash,
-                "fresh_hash": fresh_hash,
+                "cachedHash": cached_hash,
+                "freshHash": fresh_hash,
+                "isStale": is_stale,
+                "timestamp": int(time.time() * 1000),
             },
         )
-        response.raise_for_status()
 
 
 class AsyncCloudAdapter:
@@ -117,75 +122,80 @@ class AsyncCloudAdapter:
         api_key: str,
         *,
         base_url: str = "https://api.t87s.dev",
-        prefix: str = "t87s",
     ) -> None:
         import httpx
 
         self._client = httpx.AsyncClient(
             base_url=base_url,
-            headers={"Authorization": f"Bearer {api_key}"},
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
             timeout=30.0,
         )
-        self._prefix = prefix
+
+    async def _request(self, endpoint: str, body: dict) -> dict:
+        """Make a POST request to the cloud API."""
+        response = await self._client.post(endpoint, json=body)
+        if not response.is_success:
+            try:
+                error = response.json().get("error", "Request failed")
+            except Exception:
+                error = f"HTTP {response.status_code}"
+            raise RuntimeError(error)
+        return response.json()
 
     async def get(self, key: str) -> CacheEntry[object] | None:
         """Get a cache entry by key."""
-        response = await self._client.get(f"/cache/{self._prefix}/{key}")
-        if response.status_code == 404:
+        data = await self._request("/v1/cache/get", {"key": key})
+        entry = data.get("entry")
+        if entry is None:
             return None
-        response.raise_for_status()
-        data = response.json()
         return CacheEntry(
-            value=data["value"],
-            tags=[Tag(tuple(tag)) for tag in data["tags"]],
-            created_at=data["created_at"],
-            expires_at=data["expires_at"],
-            grace_until=data.get("grace_until"),
+            value=entry["value"],
+            tags=[Tag(tuple(tag)) for tag in entry["tags"]],
+            created_at=entry["createdAt"],
+            expires_at=entry["expiresAt"],
+            grace_until=entry.get("graceUntil"),
         )
 
     async def set(self, key: str, entry: CacheEntry[object]) -> None:
         """Store a cache entry."""
-        response = await self._client.put(
-            f"/cache/{self._prefix}/{key}",
-            json={
-                "value": entry.value,
-                "tags": [list(tag) for tag in entry.tags],
-                "created_at": entry.created_at,
-                "expires_at": entry.expires_at,
-                "grace_until": entry.grace_until,
+        await self._request(
+            "/v1/cache/set",
+            {
+                "key": key,
+                "entry": {
+                    "value": entry.value,
+                    "tags": [list(tag) for tag in entry.tags],
+                    "createdAt": entry.created_at,
+                    "expiresAt": entry.expires_at,
+                    "graceUntil": entry.grace_until,
+                },
             },
         )
-        response.raise_for_status()
 
     async def delete(self, key: str) -> None:
         """Delete a cache entry."""
-        response = await self._client.delete(f"/cache/{self._prefix}/{key}")
-        # Ignore 404 - key might not exist
-        if response.status_code != 404:
-            response.raise_for_status()
+        await self._request("/v1/cache/delete", {"key": key})
 
     async def get_tag_invalidation_time(self, tag: Tag) -> int | None:
-        """Get the invalidation timestamp for a tag."""
-        serialized = serialize_tag(tag)
-        response = await self._client.get(f"/tags/{self._prefix}/{serialized}")
-        if response.status_code == 404:
-            return None
-        response.raise_for_status()
-        return int(response.json()["timestamp"])
+        """Get the invalidation timestamp for a tag.
+
+        Note: This is rarely called directly. The cloud service checks
+        tag invalidation times server-side during get().
+        """
+        # For now, return None. Could add a /v1/tag/get endpoint later.
+        return None
 
     async def set_tag_invalidation_time(self, tag: Tag, timestamp: int) -> None:
         """Set the invalidation timestamp for a tag."""
-        serialized = serialize_tag(tag)
-        response = await self._client.put(
-            f"/tags/{self._prefix}/{serialized}",
-            json={"timestamp": timestamp},
-        )
-        response.raise_for_status()
+        # Invalidation is done via /v1/invalidate endpoint
+        await self._request("/v1/invalidate", {"tags": [list(tag)], "exact": True})
 
     async def clear(self) -> None:
         """Clear all cached entries."""
-        response = await self._client.delete(f"/cache/{self._prefix}")
-        response.raise_for_status()
+        await self._request("/v1/clear", {})
 
     async def disconnect(self) -> None:
         """Close the HTTP client."""
@@ -199,14 +209,13 @@ class AsyncCloudAdapter:
         fresh_hash: str,
     ) -> None:
         """Report verification result to the cloud service."""
-        response = await self._client.post(
-            "/verify",
-            json={
-                "prefix": self._prefix,
+        await self._request(
+            "/v1/verify",
+            {
                 "key": key,
-                "is_stale": is_stale,
-                "cached_hash": cached_hash,
-                "fresh_hash": fresh_hash,
+                "cachedHash": cached_hash,
+                "freshHash": fresh_hash,
+                "isStale": is_stale,
+                "timestamp": int(time.time() * 1000),
             },
         )
-        response.raise_for_status()
