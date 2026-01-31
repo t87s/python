@@ -2082,6 +2082,166 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>"
 
 ---
 
+## Task 8: Remove Old API (Definition of Done)
+
+The old API (`T87s`, `AsyncT87s`, `define_tags`, `QueryConfig`, `MutationResult`) is now superseded by the new primitives + QueryCache API. Remove the old implementation to keep the codebase clean.
+
+**Files to DELETE:**
+- `src/t87s/client.py` — Old sync T87s class
+- `src/t87s/async_client.py` — Old async AsyncT87s class
+- `src/t87s/tags.py` — Old define_tags, serialize_tag, deserialize_tag
+- `tests/test_client.py` — Tests for old sync client
+- `tests/test_async_client.py` — Tests for old async client
+- `tests/test_tags.py` — Tests for old tag utilities
+
+**Files to UPDATE:**
+- `src/t87s/__init__.py` — Remove old exports
+- `src/t87s/types.py` — Remove QueryConfig, AsyncQueryConfig, MutationResult (keep CacheEntry, Tag, Duration)
+
+**Step 1: Delete old source files**
+
+```bash
+rm src/t87s/client.py
+rm src/t87s/async_client.py
+rm src/t87s/tags.py
+```
+
+**Step 2: Delete old test files**
+
+```bash
+rm tests/test_client.py
+rm tests/test_async_client.py
+rm tests/test_tags.py
+```
+
+**Step 3: Update types.py - remove old types**
+
+Keep only:
+- `Tag` (used by new API)
+- `CacheEntry` (used by adapters)
+- `Duration` (used everywhere)
+
+Remove:
+- `QueryConfig`
+- `AsyncQueryConfig`
+- `MutationResult`
+
+**Step 4: Update __init__.py - remove old exports**
+
+```python
+# src/t87s/__init__.py
+"""t87s - Declarative cache invalidation for Python."""
+
+from contextlib import suppress
+
+# Core types
+from t87s.types import CacheEntry, Duration, Tag
+
+# Duration parsing
+from t87s.duration import parse_duration
+
+# Primitives API
+from t87s.primitives import Primitives, create_primitives
+
+# QueryCache API
+from t87s.query_cache import QueryCache, cached
+from t87s.schema import Static, TagSchema, Wild
+from t87s.typed_tag import TypedTag
+
+# Adapters
+from t87s.adapters import (
+    AsyncMemoryAdapter,
+    AsyncStorageAdapter,
+    MemoryAdapter,
+    StorageAdapter,
+    VerifiableAdapter,
+)
+
+# Optional adapter imports
+with suppress(ImportError):
+    from t87s.adapters import AsyncRedisAdapter, RedisAdapter
+
+with suppress(ImportError):
+    from t87s.adapters import AsyncUpstashAdapter, UpstashAdapter
+
+with suppress(ImportError):
+    from t87s.adapters import AsyncCloudAdapter, CloudAdapter
+
+__version__ = "0.1.0"
+
+__all__ = [
+    # Primitives API
+    "Primitives",
+    "create_primitives",
+    # QueryCache API
+    "QueryCache",
+    "cached",
+    "TagSchema",
+    "Wild",
+    "Static",
+    "TypedTag",
+    # Adapters
+    "AsyncCloudAdapter",
+    "AsyncMemoryAdapter",
+    "AsyncRedisAdapter",
+    "AsyncStorageAdapter",
+    "AsyncUpstashAdapter",
+    "CloudAdapter",
+    "MemoryAdapter",
+    "RedisAdapter",
+    "StorageAdapter",
+    "UpstashAdapter",
+    "VerifiableAdapter",
+    # Types
+    "CacheEntry",
+    "Duration",
+    "Tag",
+    "parse_duration",
+]
+```
+
+**Step 5: Update test_exports.py**
+
+Remove `test_old_exports_still_work` test, keep only `test_new_exports_available`.
+
+**Step 6: Run tests to verify nothing broke**
+
+```bash
+pytest -v
+```
+
+Expected: All remaining tests pass
+
+**Step 7: Run quality checks**
+
+```bash
+ruff check src tests --fix && ruff format src tests
+mypy src
+```
+
+**Step 8: Commit the cleanup**
+
+```bash
+git add -A
+git commit -m "refactor(python): remove old T87s API, keep only primitives + QueryCache
+
+BREAKING CHANGE: Removed old API in favor of new typed API:
+
+Removed:
+- T87s, AsyncT87s classes
+- define_tags(), QueryConfig, AsyncQueryConfig, MutationResult
+- serialize_tag(), deserialize_tag(), is_tag_prefix()
+
+Migration:
+- T87s.query() → create_primitives().query() or QueryCache @cached
+- define_tags() → class MyTags(TagSchema) with Wild[T]/Static
+- MutationResult → call cache.invalidate() directly after mutation
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>"
+```
+
+---
+
 ## Summary
 
 | Task | Description | Tests |
@@ -2093,6 +2253,7 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>"
 | 5 | Update package exports | test_exports.py |
 | 6 | Integration tests | test_integration.py |
 | 7 | Quality checks and cleanup | - |
+| 8 | **Remove old API (Definition of Done)** | - |
 
 **After completing all tasks:**
 
