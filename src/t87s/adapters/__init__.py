@@ -1,23 +1,22 @@
-"""Storage adapters for t87s cache library."""
+"""Storage adapters for t87s cache library (async only)."""
 
 from contextlib import suppress
 
 from t87s.adapters.base import (
     AsyncStorageAdapter,
-    StorageAdapter,
-    VerifiableAdapter,
+    AsyncVerifiableAdapter,
 )
-from t87s.adapters.memory import AsyncMemoryAdapter, MemoryAdapter
+from t87s.adapters.memory import AsyncMemoryAdapter
 
 # Optional adapters - only available when dependencies are installed
 with suppress(ImportError):
-    from t87s.adapters.redis import AsyncRedisAdapter, RedisAdapter
+    from t87s.adapters.redis import AsyncRedisAdapter
 
 with suppress(ImportError):
-    from t87s.adapters.upstash import AsyncUpstashAdapter, UpstashAdapter
+    from t87s.adapters.upstash import AsyncUpstashAdapter
 
 with suppress(ImportError):
-    from t87s.adapters.cloud import AsyncCloudAdapter, CloudAdapter
+    from t87s.adapters.cloud import AsyncCloudAdapter
 
 __all__ = [
     "AsyncCloudAdapter",
@@ -25,10 +24,5 @@ __all__ = [
     "AsyncRedisAdapter",
     "AsyncStorageAdapter",
     "AsyncUpstashAdapter",
-    "CloudAdapter",
-    "MemoryAdapter",
-    "RedisAdapter",
-    "StorageAdapter",
-    "UpstashAdapter",
-    "VerifiableAdapter",
+    "AsyncVerifiableAdapter",
 ]

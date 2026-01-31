@@ -1,6 +1,5 @@
 """Core types for t87s cache library."""
 
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import (
     TYPE_CHECKING,
@@ -27,34 +26,6 @@ class CacheEntry(Generic[T]):
     created_at: int  # Unix timestamp ms
     expires_at: int  # TTL expiration
     grace_until: int | None  # Grace period expiration
-
-
-@dataclass(frozen=True, slots=True)
-class QueryConfig(Generic[T]):
-    """Configuration for a cached query (sync)."""
-
-    tags: list[Tag]
-    ttl: str | int  # "5m" or milliseconds
-    fn: Callable[[], T]
-    grace: str | int | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class AsyncQueryConfig(Generic[T]):
-    """Configuration for a cached query (async)."""
-
-    tags: list[Tag]
-    ttl: str | int  # "5m" or milliseconds
-    fn: Callable[[], Awaitable[T]]
-    grace: str | int | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class MutationResult(Generic[T]):
-    """Result of a mutation with tags to invalidate."""
-
-    result: T
-    invalidates: list[Tag]
 
 
 # Duration type alias
