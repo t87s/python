@@ -1,8 +1,6 @@
 """Tests for TagSchema, Wild, Static system."""
 
-from typing import TYPE_CHECKING
 
-import pytest
 
 from t87s.schema import Static, TagSchema, Wild
 from t87s.typed_tag import TypedTag

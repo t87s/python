@@ -1,7 +1,6 @@
 """Tests for primitives API."""
 
 import asyncio
-import time
 
 import pytest
 

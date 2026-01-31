@@ -8,7 +8,6 @@ import pytest
 from t87s import AsyncMemoryAdapter
 from t87s.query_cache import QueryCache, cached
 from t87s.schema import Static, TagSchema, Wild
-from t87s.typed_tag import TypedTag
 
 
 # Test schema
