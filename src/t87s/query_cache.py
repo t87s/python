@@ -21,7 +21,7 @@ from typing import (
 
 from t87s.adapters.base import AsyncStorageAdapter
 from t87s.primitives import Primitives, create_primitives
-from t87s.schema import StaticTagSpec, TagSchema, TagSpec, WildTagSpec
+from t87s.schema import StaticTagSpec, TagSchema, TagSpec, WildNode, WildTagSpec
 from t87s.typed_tag import TypedTag
 from t87s.types import Duration
 
@@ -187,16 +187,17 @@ class QueryCache(Generic[SchemaT]):
         """
         return self._primitives
 
-    async def invalidate(self, *tags: TypedTag | TagSchema) -> None:
+    async def invalidate(self, *tags: TypedTag | TagSchema | WildNode[Any]) -> None:
         """Invalidate cache entries by tags.
 
         Usage:
             await cache.invalidate(cache.t.users("123"))
             await cache.invalidate(cache.t.posts("p1").comments("c1"))
+            await cache.invalidate(cache.t.posts)  # Invalidate all posts
         """
         paths = []
         for tag in tags:
-            if isinstance(tag, (TypedTag, TagSchema)):
+            if isinstance(tag, (TypedTag, TagSchema, WildNode)):
                 paths.append(tag.path)
             else:
                 raise TypeError(f"Expected TypedTag or TagSchema, got {type(tag)}")
