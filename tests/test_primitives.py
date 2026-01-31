@@ -60,9 +60,7 @@ class TestQuery:
         # Launch concurrent requests
         tasks = [
             asyncio.create_task(
-                primitives.query(
-                    key="user:123", tags=[("users", "123")], fn=slow_fetch
-                )
+                primitives.query(key="user:123", tags=[("users", "123")], fn=slow_fetch)
             )
             for _ in range(5)
         ]

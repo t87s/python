@@ -15,8 +15,11 @@ class TestTypedTag:
     def test_frozen(self) -> None:
         tag = TypedTag(("users",))
         # Should raise FrozenInstanceError
+        import dataclasses
+
         import pytest
-        with pytest.raises(Exception):
+
+        with pytest.raises(dataclasses.FrozenInstanceError):
             tag.path = ("other",)  # type: ignore
 
     def test_hashable(self) -> None:

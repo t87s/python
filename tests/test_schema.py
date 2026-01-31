@@ -1,7 +1,5 @@
 """Tests for TagSchema, Wild, Static system."""
 
-
-
 from t87s.schema import Static, TagSchema, Wild
 from t87s.typed_tag import TypedTag
 

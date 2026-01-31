@@ -1,7 +1,5 @@
 """Tests for Cloud adapter using mocked HTTP responses."""
 
-import json
-
 import pytest
 
 # Skip all tests if httpx is not installed
