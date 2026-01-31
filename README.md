@@ -10,24 +10,34 @@ pip install t87s[redis]       # + Redis support
 pip install t87s[all]         # Everything
 ```
 
-## Quick Start
+## Quickstart
 
 ```python
-from t87s import T87s, MemoryAdapter, define_tags, QueryConfig
+from t87s import QueryCache, TagSchema, Wild, AsyncMemoryAdapter, cached
 
-tags = define_tags({
-    "user": lambda id: ("user", id),
-})
+class MyTags(TagSchema):
+    users: Wild[TagSchema]
 
-t87s = T87s(adapter=MemoryAdapter())
+class MyCache(QueryCache[MyTags]):
+    @cached(MyTags.users())
+    async def get_user(self, id: str) -> dict:
+        return await db.users.find_by_id(id)
 
-@t87s.query
-def get_user(id: str) -> QueryConfig[User]:
-    return QueryConfig(
-        tags=[tags["user"](id)],
-        ttl="5m",
-        fn=lambda: db.get_user(id),
-    )
+cache = MyCache(adapter=AsyncMemoryAdapter())
+
+# Cache miss, fetches from DB
+user = await cache.get_user("123")
+
+# Cache hit, instant
+again = await cache.get_user("123")
+
+# Invalidate when data changes
+await cache.invalidate(cache.t.users("123"))
+
+# Cache miss again, refetches
+fresh = await cache.get_user("123")
 ```
+
+## Docs
 
 Full documentation: https://docs.t87s.dev

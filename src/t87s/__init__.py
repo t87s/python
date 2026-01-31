@@ -2,61 +2,58 @@
 
 from contextlib import suppress
 
+# Adapters (async only)
 from t87s.adapters import (
     AsyncMemoryAdapter,
     AsyncStorageAdapter,
-    MemoryAdapter,
-    StorageAdapter,
-    VerifiableAdapter,
 )
-from t87s.async_client import AsyncT87s
-from t87s.client import T87s
+
+# Duration parsing
 from t87s.duration import parse_duration
-from t87s.tags import define_tags, deserialize_tag, is_tag_prefix, serialize_tag
+
+# Primitives API
+from t87s.primitives import Primitives, create_primitives
+
+# QueryCache API
+from t87s.query_cache import QueryCache, cached
+from t87s.schema import Static, TagSchema, Wild
+from t87s.typed_tag import TypedTag
+
+# Core types
 from t87s.types import (
-    AsyncQueryConfig,
     CacheEntry,
     Duration,
-    MutationResult,
-    QueryConfig,
     Tag,
 )
 
 # Optional adapter imports - only available when dependencies are installed
 with suppress(ImportError):
-    from t87s.adapters import AsyncRedisAdapter, RedisAdapter
+    from t87s.adapters import AsyncRedisAdapter
 
 with suppress(ImportError):
-    from t87s.adapters import AsyncUpstashAdapter, UpstashAdapter
+    from t87s.adapters import AsyncUpstashAdapter
 
 with suppress(ImportError):
-    from t87s.adapters import AsyncCloudAdapter, CloudAdapter
+    from t87s.adapters import AsyncCloudAdapter
 
 __version__ = "0.1.0"
 
 __all__ = [
     "AsyncCloudAdapter",
     "AsyncMemoryAdapter",
-    "AsyncQueryConfig",
     "AsyncRedisAdapter",
     "AsyncStorageAdapter",
-    "AsyncT87s",
     "AsyncUpstashAdapter",
     "CacheEntry",
-    "CloudAdapter",
     "Duration",
-    "MemoryAdapter",
-    "MutationResult",
-    "QueryConfig",
-    "RedisAdapter",
-    "StorageAdapter",
-    "T87s",
+    "Primitives",
+    "QueryCache",
+    "Static",
     "Tag",
-    "UpstashAdapter",
-    "VerifiableAdapter",
-    "define_tags",
-    "deserialize_tag",
-    "is_tag_prefix",
+    "TagSchema",
+    "TypedTag",
+    "Wild",
+    "cached",
+    "create_primitives",
     "parse_duration",
-    "serialize_tag",
 ]
