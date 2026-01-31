@@ -70,14 +70,16 @@ class Primitives:
                 # Fresh and not stale - return immediately
                 if not stale and not expired:
                     if self._should_verify():
-                        asyncio.create_task(
+                        # Fire and forget - we don't await verification
+                        asyncio.create_task(  # noqa: RUF006
                             self._run_verification(full_key, entry.value, fn)
                         )
                     return cast(T, entry.value)
 
                 # Stale/expired but in grace - return stale, refresh bg
                 if self._is_within_grace(entry):
-                    asyncio.create_task(
+                    # Fire and forget - we don't await background refresh
+                    asyncio.create_task(  # noqa: RUF006
                         self._refresh_in_background(full_key, tags, fn, ttl, grace)
                     )
                     return cast(T, entry.value)
@@ -239,9 +241,7 @@ class Primitives:
         except Exception:
             pass  # Silently fail background refresh
 
-    async def _coalesce(
-        self, key: str, fetch: Callable[[], Awaitable[T]]
-    ) -> T:
+    async def _coalesce(self, key: str, fetch: Callable[[], Awaitable[T]]) -> T:
         """Coalesce concurrent requests for same key (stampede protection)."""
         # Check if there's already an in-flight request
         async with self._lock:

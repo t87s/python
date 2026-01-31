@@ -2,6 +2,7 @@
 
 from contextlib import suppress
 
+# Adapters
 from t87s.adapters import (
     AsyncMemoryAdapter,
     AsyncStorageAdapter,
@@ -11,8 +12,22 @@ from t87s.adapters import (
 )
 from t87s.async_client import AsyncT87s
 from t87s.client import T87s
+
+# Duration parsing
 from t87s.duration import parse_duration
+
+# New API: Primitives
+from t87s.primitives import Primitives, create_primitives
+
+# New API: QueryCache
+from t87s.query_cache import QueryCache, cached
+from t87s.schema import Static, TagSchema, Wild
+
+# Old API (still supported)
 from t87s.tags import define_tags, deserialize_tag, is_tag_prefix, serialize_tag
+from t87s.typed_tag import TypedTag
+
+# Core types
 from t87s.types import (
     AsyncQueryConfig,
     CacheEntry,
@@ -47,13 +62,21 @@ __all__ = [
     "Duration",
     "MemoryAdapter",
     "MutationResult",
+    "Primitives",
+    "QueryCache",
     "QueryConfig",
     "RedisAdapter",
+    "Static",
     "StorageAdapter",
     "T87s",
     "Tag",
+    "TagSchema",
+    "TypedTag",
     "UpstashAdapter",
     "VerifiableAdapter",
+    "Wild",
+    "cached",
+    "create_primitives",
     "define_tags",
     "deserialize_tag",
     "is_tag_prefix",

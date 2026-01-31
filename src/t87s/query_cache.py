@@ -51,7 +51,7 @@ class QueryDescriptor:
 
         # Validate wild count matches param count
         sig = inspect.signature(fn)
-        param_count = len([p for p in sig.parameters.keys() if p != "self"])
+        param_count = len([p for p in sig.parameters if p != "self"])
         max_wilds = max((spec.wild_count for spec in self._tag_specs), default=0)
 
         if max_wilds != param_count:
@@ -72,7 +72,7 @@ class QueryDescriptor:
 class BoundQuery:
     """A query method bound to a cache instance."""
 
-    __slots__ = ("_descriptor", "_cache")
+    __slots__ = ("_cache", "_descriptor")
 
     def __init__(self, descriptor: QueryDescriptor, cache: QueryCache[Any]) -> None:
         self._descriptor = descriptor
@@ -196,9 +196,7 @@ class QueryCache(Generic[SchemaT]):
         """
         paths = []
         for tag in tags:
-            if isinstance(tag, TypedTag):
-                paths.append(tag.path)
-            elif isinstance(tag, TagSchema):
+            if isinstance(tag, (TypedTag, TagSchema)):
                 paths.append(tag.path)
             else:
                 raise TypeError(f"Expected TypedTag or TagSchema, got {type(tag)}")

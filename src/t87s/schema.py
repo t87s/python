@@ -34,7 +34,7 @@ ChildrenT = TypeVar("ChildrenT", bound="TagSchema")
 class TagSpec:
     """Represents a tag path pattern with wildcards."""
 
-    __slots__ = ("_segments", "_wild_count", "_children_type")
+    __slots__ = ("_children_type", "_segments", "_wild_count")
 
     def __init__(
         self,
@@ -49,7 +49,7 @@ class TagSpec:
     def __call__(self) -> TagSpec:
         """Add a wildcard segment."""
         return TagSpec(
-            self._segments + ("*",),
+            (*self._segments, "*"),
             self._wild_count + 1,
             self._children_type,
         )
@@ -76,7 +76,7 @@ class TagSpec:
                 pass
 
         return TagSpec(
-            self._segments + (name,),
+            (*self._segments, name),
             self._wild_count,
             children_type,
         )
@@ -172,7 +172,7 @@ class StaticTagSpec:
 class WildNode(Generic[ChildrenT]):
     """Runtime node for building typed tags."""
 
-    __slots__ = ("_path", "_children_type")
+    __slots__ = ("_children_type", "_path")
 
     def __init__(
         self, path: tuple[str, ...], children_type: type[ChildrenT] | None
@@ -186,7 +186,7 @@ class WildNode(Generic[ChildrenT]):
 
     def __call__(self, id: str) -> ChildrenT:
         """Add a value to the path and return children type."""
-        new_path = self._path + (id,)
+        new_path = (*self._path, id)
         if self._children_type is None:
             result = TagSchema.__new__(TagSchema)
             result._path = new_path
@@ -226,7 +226,7 @@ else:
 class WildDescriptor(Generic[ChildrenT]):
     """Descriptor for wild tag segments."""
 
-    __slots__ = ("_name", "_children_type")
+    __slots__ = ("_children_type", "_name")
 
     def __init__(self, children_type: type[ChildrenT] | None = None) -> None:
         self._name = ""
@@ -250,7 +250,7 @@ class WildDescriptor(Generic[ChildrenT]):
             return WildTagSpec(spec)
         else:
             # Instance access: return node for tag construction
-            return WildNode(obj._path + (self._name,), self._children_type)
+            return WildNode((*obj._path, self._name), self._children_type)
 
 
 class StaticDescriptor:
@@ -277,7 +277,7 @@ class StaticDescriptor:
             return StaticTagSpec(spec)
         else:
             # Instance access: return typed tag
-            return TypedTag(obj._path + (self._name,))
+            return TypedTag((*obj._path, self._name))
 
 
 # =============================================================================
@@ -317,9 +317,9 @@ class TagSchema:
             raw_str = str(raw) if raw and not isinstance(raw, str) else (raw or "")
 
             origin = get_origin(hint) if hint else None
+            wild_names = ("Wild", "_WildMarker", "WildTagSpec")
             is_wild = (
-                origin is not None
-                and getattr(origin, "__name__", "") in ("Wild", "_WildMarker", "WildTagSpec")
+                origin is not None and getattr(origin, "__name__", "") in wild_names
             ) or "Wild" in raw_str
 
             is_static = (
@@ -354,11 +354,11 @@ class TagSchema:
 
 
 __all__ = [
-    "TagSchema",
-    "Wild",
     "Static",
-    "TagSpec",
-    "WildTagSpec",
     "StaticTagSpec",
+    "TagSchema",
+    "TagSpec",
     "TypedTag",
+    "Wild",
+    "WildTagSpec",
 ]
