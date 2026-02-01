@@ -16,7 +16,7 @@ import random
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, TypeVar, cast
+from typing import Any, TypeVar, cast, Union
 
 from t87s.adapters.base import AsyncStorageAdapter, AsyncVerifiableAdapter
 from t87s.duration import parse_duration
@@ -45,6 +45,7 @@ class Primitives:
         fn: Callable[[], Awaitable[T]],
         ttl: Duration | None = None,
         grace: Duration | None = None,
+        on_refresh: Callable[[T, T, bool], Union[None, Awaitable[None]]] | None = None,
     ) -> T:
         """Fetch with caching, stampede protection, and SWR.
 
@@ -54,6 +55,9 @@ class Primitives:
             fn: Async function to fetch data
             ttl: Time to live (default: client default)
             grace: Grace period for SWR (default: client default)
+            on_refresh: Optional callback when SWR refreshes data.
+                        Receives (old_value, new_value, changed).
+                        Can be sync or async.
 
         Returns:
             Cached or fresh data
@@ -80,7 +84,9 @@ class Primitives:
                 if self._is_within_grace(entry):
                     # Fire and forget - we don't await background refresh
                     asyncio.create_task(  # noqa: RUF006
-                        self._refresh_in_background(full_key, tags, fn, ttl, grace)
+                        self._refresh_in_background(
+                            full_key, tags, fn, ttl, grace, entry.value, on_refresh
+                        )
                     )
                     return cast(T, entry.value)
 
@@ -233,11 +239,35 @@ class Primitives:
         fn: Callable[[], Awaitable[Any]],
         ttl: Duration | None,
         grace: Duration | None,
+        stale_value: Any,
+        on_refresh: Callable[[Any, Any, bool], Union[None, Awaitable[None]]] | None,
     ) -> None:
         """Refresh cache entry in background."""
         try:
-            value = await fn()
-            await self._store(key, value, tags, ttl, grace)
+            fresh_value = await fn()
+            await self._store(key, fresh_value, tags, ttl, grace)
+
+            # Compute staleness
+            cached_hash = hashlib.sha256(
+                json.dumps(stale_value, sort_keys=True, default=str).encode()
+            ).hexdigest()[:16]
+            fresh_hash = hashlib.sha256(
+                json.dumps(fresh_value, sort_keys=True, default=str).encode()
+            ).hexdigest()[:16]
+            changed = cached_hash != fresh_hash
+
+            # Report verification (SWR is 100% verification opportunity)
+            if isinstance(self._adapter, AsyncVerifiableAdapter):
+                await self._adapter.report_verification(key, changed, cached_hash, fresh_hash)
+
+            # Fire user callback
+            if on_refresh:
+                try:
+                    result = on_refresh(stale_value, fresh_value, changed)
+                    if asyncio.iscoroutine(result):
+                        await result
+                except Exception:
+                    pass  # Swallow callback errors
         except Exception:
             pass  # Silently fail background refresh
 

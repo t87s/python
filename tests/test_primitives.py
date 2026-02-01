@@ -202,3 +202,132 @@ class TestClearAndDisconnect:
     async def test_disconnect(self, primitives) -> None:
         await primitives.disconnect()
         # Should not raise
+
+
+class TestOnRefreshCallback:
+    """Tests for on_refresh callback during SWR."""
+
+    async def test_on_refresh_called_with_changed_true(self) -> None:
+        """Callback is called with changed=True when data differs."""
+        adapter = AsyncMemoryAdapter()
+        p = create_primitives(adapter=adapter, default_ttl="1ms", default_grace="1s")
+
+        fetch_count = 0
+
+        async def fetch() -> dict:
+            nonlocal fetch_count
+            fetch_count += 1
+            return {"count": fetch_count}
+
+        callback_results = []
+
+        def on_refresh(old, new, changed) -> None:
+            callback_results.append({"old": old, "new": new, "changed": changed})
+
+        # Initial fetch
+        await p.query(key="key", tags=[], fn=fetch, on_refresh=on_refresh)
+        await asyncio.sleep(0.01)  # Expire TTL but within grace
+
+        # Trigger SWR
+        await p.query(key="key", tags=[], fn=fetch, on_refresh=on_refresh)
+        await asyncio.sleep(0.1)  # Wait for background refresh
+
+        assert len(callback_results) == 1
+        assert callback_results[0]["old"] == {"count": 1}
+        assert callback_results[0]["new"] == {"count": 2}
+        assert callback_results[0]["changed"] is True
+
+    async def test_on_refresh_called_with_changed_false(self) -> None:
+        """Callback is called with changed=False when data is the same."""
+        adapter = AsyncMemoryAdapter()
+        p = create_primitives(adapter=adapter, default_ttl="1ms", default_grace="1s")
+
+        async def fetch() -> dict:
+            return {"constant": "value"}
+
+        callback_results = []
+
+        def on_refresh(old, new, changed) -> None:
+            callback_results.append({"old": old, "new": new, "changed": changed})
+
+        await p.query(key="key", tags=[], fn=fetch, on_refresh=on_refresh)
+        await asyncio.sleep(0.01)
+
+        await p.query(key="key", tags=[], fn=fetch, on_refresh=on_refresh)
+        await asyncio.sleep(0.1)
+
+        assert len(callback_results) == 1
+        assert callback_results[0]["changed"] is False
+
+    async def test_async_on_refresh_callback(self) -> None:
+        """Async callback is awaited properly."""
+        adapter = AsyncMemoryAdapter()
+        p = create_primitives(adapter=adapter, default_ttl="1ms", default_grace="1s")
+
+        fetch_count = 0
+
+        async def fetch() -> dict:
+            nonlocal fetch_count
+            fetch_count += 1
+            return {"count": fetch_count}
+
+        callback_called = False
+
+        async def async_on_refresh(old, new, changed) -> None:
+            nonlocal callback_called
+            await asyncio.sleep(0.01)  # Simulate async work
+            callback_called = True
+
+        await p.query(key="key", tags=[], fn=fetch, on_refresh=async_on_refresh)
+        await asyncio.sleep(0.01)
+
+        await p.query(key="key", tags=[], fn=fetch, on_refresh=async_on_refresh)
+        await asyncio.sleep(0.15)
+
+        assert callback_called is True
+
+    async def test_on_refresh_errors_swallowed(self) -> None:
+        """Callback errors are swallowed silently."""
+        adapter = AsyncMemoryAdapter()
+        p = create_primitives(adapter=adapter, default_ttl="1ms", default_grace="1s")
+
+        fetch_count = 0
+
+        async def fetch() -> dict:
+            nonlocal fetch_count
+            fetch_count += 1
+            return {"count": fetch_count}
+
+        def bad_callback(old, new, changed) -> None:
+            raise ValueError("Callback error")
+
+        await p.query(key="key", tags=[], fn=fetch, on_refresh=bad_callback)
+        await asyncio.sleep(0.01)
+
+        # Should not raise despite callback error
+        await p.query(key="key", tags=[], fn=fetch, on_refresh=bad_callback)
+        await asyncio.sleep(0.1)
+
+        # Verify SWR still worked
+        result = await p.query(key="key", tags=[], fn=fetch, on_refresh=bad_callback)
+        assert result["count"] == 2
+
+    async def test_on_refresh_not_called_on_fresh_hit(self) -> None:
+        """Callback is not called on fresh cache hits."""
+        adapter = AsyncMemoryAdapter()
+        p = create_primitives(adapter=adapter, default_ttl="10s", default_grace="1s")
+
+        async def fetch() -> dict:
+            return {"id": "123"}
+
+        callback_count = 0
+
+        def on_refresh(old, new, changed) -> None:
+            nonlocal callback_count
+            callback_count += 1
+
+        await p.query(key="key", tags=[], fn=fetch, on_refresh=on_refresh)
+        await p.query(key="key", tags=[], fn=fetch, on_refresh=on_refresh)
+        await asyncio.sleep(0.05)
+
+        assert callback_count == 0

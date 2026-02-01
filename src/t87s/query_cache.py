@@ -11,10 +11,12 @@ Provides:
 from __future__ import annotations
 
 import inspect
+from collections.abc import Awaitable, Callable
 from typing import (
     Any,
     Generic,
     TypeVar,
+    Union,
     get_args,
     get_origin,
 )
@@ -44,10 +46,16 @@ def _to_tag_spec(spec: CacheableSpec) -> TagSpec:
 class QueryDescriptor:
     """Descriptor that wraps cached methods."""
 
-    def __init__(self, fn: Any, specs: tuple[CacheableSpec, ...]) -> None:
+    def __init__(
+        self,
+        fn: Any,
+        specs: tuple[CacheableSpec, ...],
+        on_refresh: Callable[[Any, Any, bool], Union[None, Awaitable[None]]] | None = None,
+    ) -> None:
         self._fn = fn
         self._tag_specs = tuple(_to_tag_spec(s) for s in specs)
         self._name = fn.__name__
+        self._on_refresh = on_refresh
 
         # Validate wild count matches param count
         sig = inspect.signature(fn)
@@ -96,10 +104,14 @@ class BoundQuery:
             key=cache_key,
             tags=tags,
             fn=fetch,
+            on_refresh=self._descriptor._on_refresh,
         )
 
 
-def cached(*specs: CacheableSpec) -> Any:
+def cached(
+    *specs: CacheableSpec,
+    on_refresh: Callable[[Any, Any, bool], Union[None, Awaitable[None]]] | None = None,
+) -> Any:
     """Decorator for cached query methods.
 
     Usage:
@@ -108,12 +120,22 @@ def cached(*specs: CacheableSpec) -> Any:
             async def get_user(self, id: str) -> User:
                 return await fetch_user(id)
 
+            @cached(MyTags.posts(), on_refresh=lambda old, new, changed: print(f"Changed: {changed}"))
+            async def get_post(self, id: str) -> Post:
+                return await fetch_post(id)
+
     The number of wild segments in specs must match the number
     of method parameters (excluding self).
+
+    Args:
+        *specs: Tag specifications for cache invalidation
+        on_refresh: Optional callback when SWR refreshes data.
+                    Receives (old_value, new_value, changed).
+                    Can be sync or async.
     """
 
     def decorator(fn: Any) -> QueryDescriptor:
-        return QueryDescriptor(fn, specs)
+        return QueryDescriptor(fn, specs, on_refresh=on_refresh)
 
     return decorator
 
