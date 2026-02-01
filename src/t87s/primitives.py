@@ -16,7 +16,7 @@ import random
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, TypeVar, cast, Union
+from typing import Any, TypeVar, cast
 
 from t87s.adapters.base import AsyncStorageAdapter, AsyncVerifiableAdapter
 from t87s.duration import parse_duration
@@ -45,7 +45,7 @@ class Primitives:
         fn: Callable[[], Awaitable[T]],
         ttl: Duration | None = None,
         grace: Duration | None = None,
-        on_refresh: Callable[[T, T, bool], Union[None, Awaitable[None]]] | None = None,
+        on_refresh: Callable[[T, T, bool], None | Awaitable[None]] | None = None,
     ) -> T:
         """Fetch with caching, stampede protection, and SWR.
 
@@ -240,7 +240,7 @@ class Primitives:
         ttl: Duration | None,
         grace: Duration | None,
         stale_value: Any,
-        on_refresh: Callable[[Any, Any, bool], Union[None, Awaitable[None]]] | None,
+        on_refresh: Callable[[Any, Any, bool], None | Awaitable[None]] | None,
     ) -> None:
         """Refresh cache entry in background."""
         try:
@@ -258,7 +258,9 @@ class Primitives:
 
             # Report verification (SWR is 100% verification opportunity)
             if isinstance(self._adapter, AsyncVerifiableAdapter):
-                await self._adapter.report_verification(key, changed, cached_hash, fresh_hash)
+                await self._adapter.report_verification(
+                    key, changed, cached_hash, fresh_hash
+                )
 
             # Fire user callback
             if on_refresh:

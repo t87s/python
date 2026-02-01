@@ -16,7 +16,6 @@ from typing import (
     Any,
     Generic,
     TypeVar,
-    Union,
     get_args,
     get_origin,
 )
@@ -50,7 +49,7 @@ class QueryDescriptor:
         self,
         fn: Any,
         specs: tuple[CacheableSpec, ...],
-        on_refresh: Callable[[Any, Any, bool], Union[None, Awaitable[None]]] | None = None,
+        on_refresh: Callable[[Any, Any, bool], None | Awaitable[None]] | None = None,
     ) -> None:
         self._fn = fn
         self._tag_specs = tuple(_to_tag_spec(s) for s in specs)
@@ -110,7 +109,7 @@ class BoundQuery:
 
 def cached(
     *specs: CacheableSpec,
-    on_refresh: Callable[[Any, Any, bool], Union[None, Awaitable[None]]] | None = None,
+    on_refresh: Callable[[Any, Any, bool], None | Awaitable[None]] | None = None,
 ) -> Any:
     """Decorator for cached query methods.
 
@@ -120,7 +119,10 @@ def cached(
             async def get_user(self, id: str) -> User:
                 return await fetch_user(id)
 
-            @cached(MyTags.posts(), on_refresh=lambda old, new, changed: print(f"Changed: {changed}"))
+            def log_refresh(old, new, changed):
+                print(f"Changed: {changed}")
+
+            @cached(MyTags.posts(), on_refresh=log_refresh)
             async def get_post(self, id: str) -> Post:
                 return await fetch_post(id)
 
