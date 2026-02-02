@@ -22,9 +22,10 @@ from typing import (
 
 from t87s.adapters.base import AsyncStorageAdapter
 from t87s.primitives import Primitives, create_primitives
+from t87s.query_awaitable import QueryAwaitable
 from t87s.schema import StaticTagSpec, TagSchema, TagSpec, WildNode, WildTagSpec
 from t87s.typed_tag import TypedTag
-from t87s.types import Duration
+from t87s.types import Duration, EntriesResult
 
 SchemaT = TypeVar("SchemaT", bound=TagSchema)
 
@@ -36,7 +37,7 @@ def _to_tag_spec(spec: CacheableSpec) -> TagSpec:
     """Convert any cacheable spec to TagSpec."""
     if isinstance(spec, TagSpec):
         return spec
-    elif isinstance(spec, (WildTagSpec, StaticTagSpec)):
+    elif isinstance(spec, WildTagSpec | StaticTagSpec):
         return spec._spec
     else:
         raise TypeError(f"Expected TagSpec, got {type(spec)}")
@@ -85,7 +86,7 @@ class BoundQuery:
         self._descriptor = descriptor
         self._cache = cache
 
-    async def __call__(self, *args: Any, **kwargs: Any) -> Any:
+    def __call__(self, *args: Any, **kwargs: Any) -> QueryAwaitable[Any]:
         # Build tags from specs
         tags = [
             spec.build_path(args[: spec.wild_count])
@@ -99,12 +100,23 @@ class BoundQuery:
         async def fetch() -> Any:
             return await self._descriptor._fn(self._cache, *args, **kwargs)
 
-        return await self._cache.primitives.query(
-            key=cache_key,
-            tags=tags,
-            fn=fetch,
-            on_refresh=self._descriptor._on_refresh,
-        )
+        async def fetch_value() -> Any:
+            return await self._cache.primitives.query(
+                key=cache_key,
+                tags=tags,
+                fn=fetch,
+                on_refresh=self._descriptor._on_refresh,
+            )
+
+        async def fetch_entries() -> EntriesResult[Any]:
+            return await self._cache.primitives.query_with_entries(
+                key=cache_key,
+                tags=tags,
+                fn=fetch,
+                on_refresh=self._descriptor._on_refresh,
+            )
+
+        return QueryAwaitable(fetch_value, fetch_entries)
 
 
 def cached(
@@ -221,7 +233,7 @@ class QueryCache(Generic[SchemaT]):
         """
         paths = []
         for tag in tags:
-            if isinstance(tag, (TypedTag, TagSchema, WildNode)):
+            if isinstance(tag, TypedTag | TagSchema | WildNode):
                 paths.append(tag.path)
             else:
                 raise TypeError(f"Expected TypedTag or TagSchema, got {type(tag)}")

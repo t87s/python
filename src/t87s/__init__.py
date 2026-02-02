@@ -14,6 +14,9 @@ from t87s.duration import parse_duration
 # Primitives API
 from t87s.primitives import Primitives, create_primitives
 
+# QueryAwaitable
+from t87s.query_awaitable import QueryAwaitable
+
 # QueryCache API
 from t87s.query_cache import QueryCache, cached
 from t87s.schema import Static, TagSchema, Wild
@@ -23,6 +26,7 @@ from t87s.typed_tag import TypedTag
 from t87s.types import (
     CacheEntry,
     Duration,
+    EntriesResult,
     Tag,
 )
 
@@ -46,7 +50,9 @@ __all__ = [
     "AsyncUpstashAdapter",
     "CacheEntry",
     "Duration",
+    "EntriesResult",
     "Primitives",
+    "QueryAwaitable",
     "QueryCache",
     "Static",
     "Tag",
