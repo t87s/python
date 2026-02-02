@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable, Coroutine, Generator
 from typing import (
     Any,
-    Awaitable,
-    Callable,
-    Coroutine,
-    Generator,
     Generic,
     TypeVar,
 )
@@ -25,7 +22,7 @@ class QueryAwaitable(Generic[T]):
         entry = await query_awaitable.entries    # EntriesResult[T]
     """
 
-    __slots__ = ("_value_fn", "_entries_fn")
+    __slots__ = ("_entries_fn", "_value_fn")
 
     def __init__(
         self,

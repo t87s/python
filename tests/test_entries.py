@@ -48,9 +48,7 @@ class TestEntriesAccess:
         assert result.before is not None
         assert result.before is result.after
 
-    async def test_entries_value_accessible(
-        self, cache: QueryCache[UserTags]
-    ) -> None:
+    async def test_entries_value_accessible(self, cache: QueryCache[UserTags]) -> None:
         """Can access value through entries result."""
         result = await cache.get_user("123").entries
         assert result.after.value["name"] == "Test"
