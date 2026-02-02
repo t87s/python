@@ -20,7 +20,7 @@ from typing import Any, TypeVar, cast
 
 from t87s.adapters.base import AsyncStorageAdapter, AsyncVerifiableAdapter
 from t87s.duration import parse_duration
-from t87s.types import CacheEntry, Duration, Tag
+from t87s.types import CacheEntry, Duration, EntriesResult, Tag
 
 T = TypeVar("T")
 
@@ -96,6 +96,30 @@ class Primitives:
             return value
 
         return await self._coalesce(full_key, fetch)
+
+    async def query_with_entries(
+        self,
+        *,
+        key: str,
+        tags: list[tuple[str, ...]],
+        fn: Callable[[], Awaitable[T]],
+        ttl: Duration | None = None,
+        grace: Duration | None = None,
+        on_refresh: Callable[[T, T, bool], None | Awaitable[None]] | None = None,
+    ) -> EntriesResult[T]:
+        """Fetch with caching and return cache metadata.
+
+        Same as query() but returns EntriesResult with before/after entries.
+        """
+        full_key = f"{self._prefix}:{key}"
+
+        async def fetch() -> EntriesResult[T]:
+            return await self._get_or_fetch_with_entries(
+                full_key, tags, fn, ttl, grace, on_refresh
+            )
+
+        # For entries, we can't easily coalesce, so just fetch
+        return await fetch()
 
     async def get(self, key: str) -> Any | None:
         """Raw get - escape hatch for manual cache access."""
@@ -173,6 +197,30 @@ class Primitives:
             grace_until=now + ttl_ms + grace_ms if grace_ms else None,
         )
         await self._adapter.set(key, entry)
+
+    async def _store_and_return(
+        self,
+        key: str,
+        tags: list[tuple[str, ...]],
+        fn: Callable[[], Awaitable[T]],
+        ttl: Duration | None,
+        grace: Duration | None,
+    ) -> CacheEntry[T]:
+        """Fetch, store, and return the cache entry."""
+        now = int(time.time() * 1000)
+        ttl_ms = parse_duration(ttl) if ttl else self._default_ttl
+        grace_ms = parse_duration(grace) if grace else self._default_grace
+
+        value = await fn()
+        entry: CacheEntry[T] = CacheEntry(
+            value=value,
+            tags=[Tag(t) for t in tags],
+            created_at=now,
+            expires_at=now + ttl_ms,
+            grace_until=now + ttl_ms + grace_ms if grace_ms else None,
+        )
+        await self._adapter.set(key, cast(CacheEntry[object], entry))
+        return entry
 
     async def _is_stale(self, entry: CacheEntry[Any]) -> bool:
         """Check if any tag has been invalidated since entry creation."""
@@ -298,6 +346,44 @@ class Primitives:
         finally:
             async with self._lock:
                 del self._in_flight[key]
+
+    async def _get_or_fetch_with_entries(
+        self,
+        key: str,
+        tags: list[tuple[str, ...]],
+        fn: Callable[[], Awaitable[T]],
+        ttl: Duration | None,
+        grace: Duration | None,
+        on_refresh: Callable[[T, T, bool], None | Awaitable[None]] | None,
+    ) -> EntriesResult[T]:
+        """Fetch with caching and return before/after entries."""
+        raw_entry = await self._adapter.get(key)
+        entry = cast(CacheEntry[T] | None, raw_entry)
+
+        if entry is not None:
+            stale = await self._is_stale(entry)
+            expired = self._is_expired(entry)
+
+            # Fresh and not stale - return immediately
+            if not stale and not expired:
+                if self._should_verify():
+                    asyncio.create_task(  # noqa: RUF006
+                        self._run_verification(key, entry.value, fn)
+                    )
+                return EntriesResult(before=entry, after=entry)
+
+            # Stale/expired but in grace - return stale, refresh bg
+            if self._is_within_grace(entry):
+                asyncio.create_task(  # noqa: RUF006
+                    self._refresh_in_background(
+                        key, tags, fn, ttl, grace, entry.value, on_refresh
+                    )
+                )
+                return EntriesResult(before=entry, after=entry)
+
+        # Cache miss or outside grace - fetch synchronously
+        new_entry = await self._store_and_return(key, tags, fn, ttl, grace)
+        return EntriesResult(before=entry, after=new_entry)
 
 
 def create_primitives(
