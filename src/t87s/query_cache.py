@@ -24,7 +24,8 @@ from t87s.adapters.base import AsyncStorageAdapter
 from t87s.primitives import Primitives, create_primitives
 from t87s.schema import StaticTagSpec, TagSchema, TagSpec, WildNode, WildTagSpec
 from t87s.typed_tag import TypedTag
-from t87s.types import Duration
+from t87s.types import Duration, EntriesResult
+from t87s.query_awaitable import QueryAwaitable
 
 SchemaT = TypeVar("SchemaT", bound=TagSchema)
 
@@ -85,7 +86,7 @@ class BoundQuery:
         self._descriptor = descriptor
         self._cache = cache
 
-    async def __call__(self, *args: Any, **kwargs: Any) -> Any:
+    def __call__(self, *args: Any, **kwargs: Any) -> QueryAwaitable[Any]:
         # Build tags from specs
         tags = [
             spec.build_path(args[: spec.wild_count])
@@ -99,12 +100,23 @@ class BoundQuery:
         async def fetch() -> Any:
             return await self._descriptor._fn(self._cache, *args, **kwargs)
 
-        return await self._cache.primitives.query(
-            key=cache_key,
-            tags=tags,
-            fn=fetch,
-            on_refresh=self._descriptor._on_refresh,
-        )
+        async def fetch_value() -> Any:
+            return await self._cache.primitives.query(
+                key=cache_key,
+                tags=tags,
+                fn=fetch,
+                on_refresh=self._descriptor._on_refresh,
+            )
+
+        async def fetch_entries() -> EntriesResult[Any]:
+            return await self._cache.primitives.query_with_entries(
+                key=cache_key,
+                tags=tags,
+                fn=fetch,
+                on_refresh=self._descriptor._on_refresh,
+            )
+
+        return QueryAwaitable(fetch_value, fetch_entries)
 
 
 def cached(
