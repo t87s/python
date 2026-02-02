@@ -36,6 +36,11 @@ await cache.invalidate(cache.t.users("123"))
 
 # Cache miss again, refetches
 fresh = await cache.get_user("123")
+
+# Access cache metadata via .entries
+result = await cache.get_user("123").entries
+print(result.before)  # CacheEntry | None (None on miss)
+print(result.after)   # CacheEntry (always present)
 ```
 
 ## Docs
