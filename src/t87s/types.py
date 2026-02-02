@@ -28,5 +28,13 @@ class CacheEntry(Generic[T]):
     grace_until: int | None  # Grace period expiration
 
 
+@dataclass(frozen=True, slots=True)
+class EntriesResult(Generic[T]):
+    """Result from a query with cache metadata."""
+
+    before: CacheEntry[T] | None  # None if cache miss
+    after: CacheEntry[T]
+
+
 # Duration type alias
 Duration = str | int  # "30s", "5m", "2h", "1d" or milliseconds
